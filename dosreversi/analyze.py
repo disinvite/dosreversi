@@ -80,6 +80,10 @@ def is_shl_bx(address, size, mnemonic, op_str):
 def is_jmp_cs_bx_plus(address, size, mnemonic, op_str):
     return mnemonic == "jmp" and op_str.startswith("word ptr cs:[bx + ")
 
+# capstone doesn't treat the offset as a UINT16LE
+def is_jmp_cs_bx_minus(address, size, mnemonic, op_str):
+    return mnemonic == "jmp" and op_str.startswith("word ptr cs:[bx - ")
+
 def is_cmp_ax(address, size, mnemonic, op_str):
     return mnemonic == "cmp" and op_str.startswith("ax, ")
 
@@ -97,7 +101,10 @@ def is_mov_cx(address, size, mnemonic, op_str):
 
 def grab_jump_cs_bx_offset(address, size, mnemonic, op_str, seg):
     # "word ptr cs:[bx + " is 18 characters long.
-    return int(op_str[18:-1], 16) + (seg * 16)
+    if op_str[16] == '-':
+        return (65536 - int(op_str[18:-1], 16)) + (seg * 16)
+    else:
+        return int(op_str[18:-1], 16) + (seg * 16)
 
 def find_jump_tables(disasm, seg):
     """return all jump tables offsets for this function so we don't diassemble them"""
@@ -127,7 +134,8 @@ def find_jump_tables(disasm, seg):
     # find `shl bx, 1` that comes before a jump that we are interested in
     for shl_bx_i in [i for i,x in enumerate(disasm) if is_shl_bx(*x)]:
         # if not immediately followed by `jmp word ptr cs:[bx +]`
-        if not is_jmp_cs_bx_plus(*disasm[shl_bx_i+1]):
+        if not (is_jmp_cs_bx_plus(*disasm[shl_bx_i+1])
+            or is_jmp_cs_bx_minus(*disasm[shl_bx_i+1])):
             continue
 
         jt_ofs = grab_jump_cs_bx_offset(*disasm[shl_bx_i+1], seg)
