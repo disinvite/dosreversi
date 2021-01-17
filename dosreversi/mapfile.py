@@ -6,7 +6,8 @@ from operator import itemgetter
 PascalSegUnits = ['Crt', 'System']
 MyPascalSegMatch = re.compile(r"^\~?(.+):([0-9a-fA-F]{4})\s*(.+)$")
 SegMatch = re.compile(r"^([0-9A-F]{5})H ([0-9A-F]{5})H ([0-9A-F]{5})H (.+?)\s*([A-Z]*)$")
-PublicMatch = re.compile(r"\s*^([0-9a-fA-F]{4}):([0-9a-fA-F]{4})\s*(\S*)$")
+PublicMatch = re.compile(r"^\s*([0-9a-fA-F]{4}):([0-9a-fA-F]{4})\s*(\S*)$")
+PublicIdleMatch = re.compile(r"^\s*([0-9a-fA-F]{4}):([0-9a-fA-F]{4})\s*(?:idle)*\s*(\S*)$")
 
 class SegEntry:
     def __init__(self, match):
@@ -72,9 +73,9 @@ class MapFile:
 
         # Because there could be "publics by name" and "publics by value" in the file
         # We want "publics by value"
-        publicUnique = set([line for line in lines if PublicMatch.match(line)])
+        publicUnique = set([line for line in lines if PublicIdleMatch.match(line)])
         for line in publicUnique:
-            match = PublicMatch.match(line)
+            match = PublicIdleMatch.match(line)
             if match is None:
                 continue
 
