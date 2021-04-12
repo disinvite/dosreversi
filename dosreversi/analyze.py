@@ -46,23 +46,25 @@ def get_raw_bytes(bytes):
 def get_raw_chars(bytes):
     return ''.join([chr(b) if (b < 127 and b > 31) else '.' for b in bytes])
 
-def getCode(exe_filename, data_seg_offset = None):
+def getCode(exe_filename, code_start = None, data_start = None):
     #Caller should catch FileNotFoundError
     with open(exe_filename, 'rb') as f:
         contents = f.read()
 
-    head = dumpHeaders(contents[:32])
-    codeSize = ((head["totalPages"] - 1) * 512) + head["bytesInLastPage"]
-    endOfHeader = head["headerSize"] * 16
-    relocationTable = contents[head["relocationTableOffset"] : endOfHeader]
+    if code_start is None:
+        head = dumpHeaders(contents[:32])
+        codeSize = ((head["totalPages"] - 1) * 512) + head["bytesInLastPage"]
+        endOfHeader = head["headerSize"] * 16
+        relocationTable = contents[head["relocationTableOffset"] : endOfHeader]
 
-    # If we gave the offset of the data segment, crop the data off.
-    # Otherwise, it could get disassembled and produce a lot of garbage
-    binary = contents[endOfHeader : endOfHeader + codeSize]
-    if data_seg_offset is None:
-        return binary
+        binary = contents[endOfHeader : endOfHeader + codeSize]
     else:
-        return binary[:data_seg_offset]
+        if data_start is None:
+            binary = contents[code_start:]
+        else:
+            binary = contents[code_start:data_start]
+    
+    return binary
 
 def seg_ofs_to_absolute(seg, ofs):
     return int(ofs,16) + (int(seg,16) * 16)
@@ -350,6 +352,12 @@ def do_one_function(function_info):
             excerpt = Code[function_info["abs"] : ]
             first_pass(excerpt, function_info["seg"], function_info["abs"], True)
 
+def just_start_disassembling(function_info):
+    ExportPrint(f"#{ function_info['name'] }")
+
+    excerpt = Code[function_info["abs"] : ]
+    first_pass(excerpt, function_info["seg"], function_info["abs"])
+
 def read_map_file(map_filename, isPascal):
     x = MapFile(map_filename, isPascal)
     return x.export()
@@ -522,16 +530,24 @@ class MapperSettings:
     def __init__(self, obj):
         # required
         self.exeFile = obj['exe-file']
-        self.mapFile = obj['map-file']
+        self.mapFile = obj.get('map-file', '')
 
         self.outFile = obj.get('out-file')
         self.commentFile = obj.get('comment-file')
         self.isPascal = obj.get('pascal', False)
         self.variableFile = obj.get('variable-file', None)
         self.mapFileVariables = obj.get('map-file-variables', False)
+        self.codeStart = obj.get('code-start', None)
+        self.dataStart = obj.get('data-start', None)
         
         if type(self.mapFileVariables) is not bool:
             self.mapFileVariables = bool(self.mapFileVariables)
+
+        if self.codeStart is not None and type(self.codeStart) is str:
+            self.codeStart = int(self.codeStart, 16)
+
+        if self.dataStart is not None and type(self.dataStart) is str:
+            self.dataStart = int(self.dataStart, 16)
 
 def analyze_code(settingsInput):
     global Code
@@ -558,7 +574,7 @@ def analyze_code(settingsInput):
 
     try:
         # Global because maybe it's faster than passing the array around?
-        Code = getCode(settings.exeFile)
+        Code = getCode(settings.exeFile, settings.codeStart, settings.dataStart)
     except FileNotFoundError:
         exit(f"exe file '{settings.exeFile}' not found")
 
@@ -591,8 +607,13 @@ def analyze_code(settingsInput):
     if settings.outFile is not None:
         with open(settings.outFile, 'w+') as f:
             ExportPrint = lambda line: f.write(f"{line}\n")
-            for x in fmap:
-                do_one_function(x)
+
+            if len(fmap) == 1:
+                # Just disassemble from code_start to data_start.
+                just_start_disassembling(fmap[0])
+            else:
+                for x in fmap:
+                    do_one_function(x)
     else:
         ExportPrint = print
         for x in fmap:

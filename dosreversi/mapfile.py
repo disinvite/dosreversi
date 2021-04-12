@@ -66,8 +66,12 @@ class MapFile:
         return result
 
     def reload(self):
-        with open(self.filename, 'r') as f:
-            lines = [line.strip() for line in f]
+        try:
+            with open(self.filename, 'r') as f:
+                lines = [line.strip() for line in f]
+        except FileNotFoundError:
+            self.publicMap['0000'] = {'0000': 'JustStartDisassembling'}
+            return
 
         self.segs = [SegEntry(item) for item in map(SegMatch.match, lines) if item is not None]
 
