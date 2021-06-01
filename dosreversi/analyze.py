@@ -17,6 +17,7 @@ Code = None
 ExportPrint = None # function to output to file or console
 
 KnownVariables = {}
+CsVariables = {}
 
 SEG_SHIFT = 0
 
@@ -179,6 +180,19 @@ def display_jump_table(jt_bytes):
         addr, = struct.unpack('<H',jt_bytes[(i * 2) : (i * 2) + 2])
         ExportPrint(f"{i:3} -- {addr:04x}")
 
+def csVariableSubstitute(op_str, seg, exact = False):
+    if seg not in CsVariables:
+        return op_str
+
+    variableMatch = HexStringMatch.search(op_str)
+    if variableMatch is not None:
+        variableAddr = int(variableMatch[0], 16)
+        if variableAddr in CsVariables[seg]:
+            if not exact or (exact and ('+' not in CsVariables[seg][variableAddr])):
+                op_str = HexStringMatch.sub(CsVariables[seg][variableAddr], op_str, 1)
+            
+    return op_str
+
 def variableNameSubstitute(op_str, exact = False):
     variableMatch = HexStringMatch.search(op_str)
     if variableMatch is not None:
@@ -195,7 +209,9 @@ def print_asm_line(seg, ofs, function_start, line):
 
     # replace variable address with known variable name
     if ("bp -" not in op_str) and ("bp +" not in op_str):
-        if ("ptr" in op_str): 
+        if ("ptr cs:" in op_str):
+            op_str = csVariableSubstitute(op_str, seg)
+        elif ("ptr" in op_str): 
             op_str = variableNameSubstitute(op_str)
         elif (line.mnemonic == "lcall") and ("[" in op_str):
             op_str = variableNameSubstitute(op_str)
@@ -432,15 +448,40 @@ def useMapFileForVariables(mapFileTuples):
 
 def createKnownVariables(variableFile):
     global KnownVariables
+    global CsVariables
+
     with open(variableFile, 'r') as f:
         for line in f:
+            # support comments
+            if line.startswith('//'):
+                continue
+
+            # support blank lines
+            if len(line.strip()) == 0:
+                continue
+
             a = line.strip().split(',')
             if len(a) == 3:
                 [start, count, name] = a
-                start = int(start, 16)
-                KnownVariables[start] = f"*{name}"
-                for i in range(1, int(count)):
-                    KnownVariables[start+i] = f"*{name}+{i}"
+
+                # if code segment variable
+                if ':' in start:
+                    [seg,ofs] = start.split(':', 2)
+                    d_seg = int(seg, 16)
+                    d_ofs = int(ofs, 16)
+                    if d_seg not in CsVariables:
+                        CsVariables[d_seg] = {}
+
+                    CsVariables[d_seg][d_ofs] = f"*{name}"
+                    for i in range(1, int(count)):
+                        CsVariables[d_seg][d_ofs+i] = f"*{name}+{i}"
+
+                # else data segment variable
+                else:
+                    start = int(start, 16)
+                    KnownVariables[start] = f"*{name}"
+                    for i in range(1, int(count)):
+                        KnownVariables[start+i] = f"*{name}+{i}"
 
 def getArg():
     """Get the first command line argument if there is one"""
