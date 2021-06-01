@@ -9,6 +9,7 @@ from capstone import *
 """dummy up version Three"""
 
 LineComments = None
+AboveComments = None
 HexStringMatch = re.compile("0x[0-9a-fA-F]{1,4}")
 MapFileAddrMatch = re.compile("^....:.... ")
 FunctionNames = None
@@ -263,6 +264,10 @@ def print_asm_line(seg, ofs, function_start, line):
         extras.append(f"; {LineComments[abs_ofs]}")
 
     #print(f"{seg+SEG_SHIFT:04x}:{ofs:04x} (0x{abs_ofs:05x}) : {get_raw_bytes(line.bytes):20}  {line.mnemonic} {line.op_str} {comment}")
+
+    if abs_ofs in AboveComments:
+        ExportPrint(f"; {AboveComments[abs_ofs]}")
+
     ExportPrint(f"{BaseString} {' '.join(extras)}")
 
 def disassemble(binary, seg, absolute_offset, options):    
@@ -381,7 +386,8 @@ def get_function_map(map_file):
     return functions
 
 def read_comments(comment_filename):
-    output = {}
+    same_line = {}
+    above_line = {}
     with open(comment_filename, 'r') as f:
         lines = [line.strip() for line in f]
     
@@ -392,10 +398,14 @@ def read_comments(comment_filename):
         if len(line) == 0:
             continue
 
-        [addr, comment] = line.split(';', 2)
-        output[int(addr, 16)] = comment.strip()
+        if ';' in line:
+            [addr, comment] = line.split(';', 2)
+            same_line[int(addr, 16)] = comment.strip()
+        elif '^' in line:
+            [addr, comment] = line.split('^', 2)
+            above_line[int(addr, 16)] = comment.strip() 
 
-    return output
+    return (same_line, above_line)
 
 def useMapFileForVariables(mapFileTuples):
     global KnownVariables
@@ -552,6 +562,7 @@ class MapperSettings:
 def analyze_code(settingsInput):
     global Code
     global LineComments
+    global AboveComments
     global FunctionNames
     global ExportPrint
 
@@ -563,9 +574,10 @@ def analyze_code(settingsInput):
         exit(f"map file '{settings.mapFile}' not found")
 
     try:
-        LineComments = read_comments(settings.commentFile)
+        (LineComments, AboveComments) = read_comments(settings.commentFile)
     except:
         LineComments = {}
+        AboveComments = {}
 
     if settings.mapFileVariables:
         useMapFileForVariables(map_file)
