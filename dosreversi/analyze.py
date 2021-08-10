@@ -203,6 +203,21 @@ def variableNameSubstitute(op_str, exact = False):
             
     return op_str
 
+def computeDestinationAddr(bs):
+    """Jump or call relative to addr of following instruction"""
+    instruction_len = len(bs)
+    addr_bs = bs[1:]
+    if len(addr_bs) == 1:
+        t = struct.unpack('<b', addr_bs)
+    elif len(addr_bs) == 2:
+        t = struct.unpack('<h', addr_bs)
+    elif len(addr_bs) == 4:
+        t = struct.unpack('<l', addr_bs)
+    else:
+        t = (0)
+
+    return t[0] + instruction_len
+
 def print_asm_line(seg, ofs, function_start, line):
     abs_ofs = ofs + (seg*16)
     op_str = line.op_str
@@ -225,19 +240,14 @@ def print_asm_line(seg, ofs, function_start, line):
     if line.mnemonic == 'call':
         # not a function pointer call or something else
         if line.op_str.startswith('0x'):
-            true_offset = int(line.op_str,16)
+            true_offset = abs_ofs + computeDestinationAddr(line.bytes)
 
             if true_offset in FunctionNames:
                 func_name = FunctionNames[true_offset]
-            elif (true_offset + 0x10000) in FunctionNames:
-                # Capstone limitation
-                func_name = FunctionNames[true_offset + 0x10000]
             else:
                 func_name = "?"
-            #print(f"{seg+SEG_SHIFT:04x}:{ofs:04x} (0x{abs_ofs:05x}) : {get_raw_bytes(line.bytes):20}  {line.mnemonic} {line.op_str} #{func_name}")
+                
             extras.append( f"#{func_name}" )
-            #print(f"{BaseString} #{func_name}")
-            #return
 
     elif line.mnemonic == 'lcall':
         if line.op_str.startswith('0'):
@@ -256,25 +266,13 @@ def print_asm_line(seg, ofs, function_start, line):
 
 
     elif line.mnemonic.startswith('j'):
-        if line.op_str.startswith('0'):
-            destination = int(line.op_str, 16)
-            
-            # Capstone limitation
-            __x = 0
-            while (abs(destination - line.address) > 60000) and (__x < 2):
-                destination += 0x10000
-                __x += 1
+        corrected_jump_offset = computeDestinationAddr(line.bytes)
+        if corrected_jump_offset < 0:
+            jump_notice = f"$ jump up {-1 * corrected_jump_offset}"
+        else:
+            jump_notice = f"$ jump down {corrected_jump_offset}"
 
-            if destination < line.address:
-                jump_notice = f"$ jump up {line.address - destination}"
-            else:
-                jump_notice = f"$ jump down {destination - line.address}"
-
-            #print(f"{seg+SEG_SHIFT:04x}:{ofs:04x} (0x{abs_ofs:05x}) : {get_raw_bytes(line.bytes):20}  {line.mnemonic} {line.op_str} {comment}")
-            extras.append(jump_notice)
-            #print(f"{BaseString} {comment}")
-            #return
-
+        extras.append(jump_notice)
 
     if abs_ofs in LineComments:
         extras.append(f"; {LineComments[abs_ofs]}")
