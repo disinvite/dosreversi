@@ -206,7 +206,13 @@ def variableNameSubstitute(op_str, exact = False):
 def computeDestinationAddr(bs):
     """Jump or call relative to addr of following instruction"""
     instruction_len = len(bs)
-    addr_bs = bs[1:]
+
+    # Short jump versus near jump
+    if bs[0] == 15:
+        addr_bs = bs[2:]
+    else:
+        addr_bs = bs[1:]
+
     if len(addr_bs) == 1:
         t = struct.unpack('<b', addr_bs)
     elif len(addr_bs) == 2:
@@ -216,7 +222,11 @@ def computeDestinationAddr(bs):
     else:
         t = (0)
 
-    return t[0] + instruction_len
+    # Just to be on the safe side.
+    if type(t) is tuple:
+        return t[0] + instruction_len
+    else:
+        return 0
 
 def print_asm_line(seg, ofs, function_start, line):
     abs_ofs = ofs + (seg*16)
