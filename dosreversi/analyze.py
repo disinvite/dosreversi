@@ -330,13 +330,61 @@ def disassemble(binary, seg, absolute_offset, options):
         elif tType == 'jumps':
             display_jump_table(binary[tStart : tEnd])
 
+def determineBinaryType(name):
+    if name.startswith('~u8_'):
+        return ('B', 1, False)
+    elif name.startswith('~s8_'):
+        return ('b', 1, True)
+    elif name.startswith('~u16_') or name.startswith('~a16_'):
+        return ('H', 2, False)
+    elif name.startswith('~s16_'):
+        return ('h', 2, True)
+    else:
+        return None
+
+def unpackBinaryData(binary, info, seg, absolute_offset):
+    ofs = absolute_offset - (seg << 4)
+
+    (unpackLetter, nCols, isSigned) = info
+    # just lop off whatever doesn't fit
+    datalen = len(binary) - (len(binary) % nCols)
+    loppedOff = datalen != len(binary)
+    binary = binary[:datalen]
+
+    dataPerRow = 16 #int(16 / nCols)
+
+    unpackString = f"<{unpackLetter}"
+
+    (nRows, remain) = divmod(datalen, dataPerRow)
+    if remain > 0:
+        nRows += 1
+
+    for i in range(nRows):
+        row = binary[i*dataPerRow : (i+1)*dataPerRow]
+        row2 = [row[i:i+nCols] for i in range(0, len(row), nCols)]
+        rowvals = [struct.unpack(unpackString, x)[0] for x in row2]
+        if isSigned:
+            rowstr = ', '.join([str(x) for x in rowvals])
+        else:
+            rowstr = ', '.join([f"{x:0{nCols*2}x}" for x in rowvals])
+
+        ExportPrint(f"{seg+SEG_SHIFT:04x}:{ofs + (i*dataPerRow):04x} : {rowstr}")
+
+    if loppedOff:
+        ExportPrint("Note: Some data was discarded")
+
 def displayBinaryData(binary, seg, absolute_offset):
     #TODO
     #abs_ofs = ofs + (seg*16)
     #BaseString = f"{seg+SEG_SHIFT:04x}:{ofs:04x} (0x{abs_ofs:05x}) : {get_raw_bytes(line.bytes):20}  {line.mnemonic} {line.op_str}"
     ofs = absolute_offset - (seg << 4)
 
-    for i in range(int(len(binary)/16)+1):
+
+    (nRows, remain) = divmod(len(binary), 16)
+    if remain > 0:
+        nRows += 1
+
+    for i in range(nRows):
         row = binary[i*16 : (i+1)*16]
         ExportPrint(f"{seg+SEG_SHIFT:04x}:{ofs + (i*16):04x} : {get_raw_bytes(row):48}  {get_raw_chars(row):16}")
 
@@ -370,7 +418,11 @@ def do_one_function(function_info):
         else:
             excerpt = Code[function_info["abs"] : ]
 
-        displayBinaryData(excerpt, function_info['seg'], function_info['abs'])
+        bin_detail = determineBinaryType(function_info['name'])
+        if bin_detail is not None:
+            unpackBinaryData(excerpt, bin_detail, function_info['seg'], function_info['abs'])
+        else:
+            displayBinaryData(excerpt, function_info['seg'], function_info['abs'])
 
     else:
         ExportPrint(f"#{ function_info['name'] }")
