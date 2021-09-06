@@ -251,7 +251,7 @@ def print_asm_line(seg, ofs, function_start, line):
         # not a function pointer call or something else
         if line.op_str.startswith('0x'):
             # mod 65536 if the offset is negative and wraps around the seg.
-            true_offset = abs_ofs + computeDestinationAddr(line.bytes) % 0x10000
+            true_offset = (abs_ofs + computeDestinationAddr(line.bytes)) % 0x10000
 
             if true_offset in FunctionNames:
                 func_name = FunctionNames[true_offset]
