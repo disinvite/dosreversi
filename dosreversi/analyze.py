@@ -250,10 +250,12 @@ def print_asm_line(seg, ofs, function_start, line):
     if line.mnemonic == 'call':
         # not a function pointer call or something else
         if line.op_str.startswith('0x'):
-            # mod 65536 if the offset is negative and wraps around the seg.
-            true_offset = abs_ofs + computeDestinationAddr(line.bytes)
-            if true_offset < 0:
-                true_offset %= 0x10000
+            # We always wrap around, so do the segment calculation to
+            # get the real absolute offset.
+            true_offset = (ofs + computeDestinationAddr(line.bytes)) % 0x10000
+            true_offset += (seg << 4)
+
+            #print(f"{line.mnemonic} {line.op_str:10} {true_offset:04x}")
 
             if true_offset in FunctionNames:
                 func_name = FunctionNames[true_offset]
